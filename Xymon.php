@@ -51,9 +51,11 @@ class Xymon extends AbstractIntegrator
         if (($svc == 'check-host-alive') || ($svc == 'DV-check-host-alive')) {
             #$out = $this->telnet->execute("GET hosts\nFilter: host_name = $host\nColumns: state plugin_output\n\n");
             $out = $this->telnet->execute("GET services\nColumns: state plugin_output\nFilter: description ~~ ^{$host}_info$\n\n");
+            $perf = $this->telnet->execute("GET services\nFilter: description ~~ ^{$host}_info$\nStats: sum perf_data\n\n");
         } else {
             #$out = $this->telnet->execute("GET services\nFilter: host_name = $host\nFilter: display_name = $svc\nColumns:state plugin_output\n\n");
             $out = $this->telnet->execute("GET services\nColumns: state plugin_output\nFilter: description ~~ ^{$host}_{$svc}$\n\n");
+            $perf = $this->telnet->execute("GET services\nFilter: description ~~ ^{$host}_{$svc}$\nStats: sum perf_data\n\n");
         }
         error_log("XYMON: OUT: {$out}");
         $lines = preg_split("/\r\n|\n|\r/", $out);
@@ -62,9 +64,10 @@ class Xymon extends AbstractIntegrator
         error_log("XYMON: LINE: {$line}");
         $retorno = array(
             'STATE' => intval($line[0]),
-            'OUTPUT' => $line[1],
+            #'OUTPUT' => $line[1],
+            'OUTPUT' => $perf,
             'start_time' => $date,
-            'value' => $line[1]
+            'value' => $perf
         );
         error_log("XYMON: RETORNO: {$retorno}");
         return $retorno;
