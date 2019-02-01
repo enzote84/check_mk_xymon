@@ -108,6 +108,34 @@ color_to_avail() {
   echo "${AVAIL}"
 }
 
+# Read the last value registered in an RRD file:
+# Usage: rrd_last_value <rrd_file>
+rrd_last_value() {
+  # Check if file exist
+  RRDFILE="$1"
+  if [[ ! -f $RRDFILE ]]; then
+    echo "ERROR: File $RRDFILE not found." >&2
+    echo "0"
+    return $STATE_UNKNOWN
+  fi
+  # Get last update time
+  LASTUPDATE=$(rrdtool last $RRDFILE)
+  if [[ ! $? ]]; then
+    echo "ERROR: Couldn't get last update time." >&2
+    echo "0"
+    return $STATE_UNKNOWN
+  fi
+  # Get last value
+  LASTVALUE=$(rrdtool fetch $RRDFILE AVERAGE|awk -F': ' -v last=$LASTUPDATE 'BEGIN{val=last;} {if($1<last) val=$2;} END{print val;}'|sed "s/ .*$//g")
+  if [[ ! $? ]]; then
+    echo "ERROR: Couldn't get last value." >&2
+    echo "0"
+    return $STATE_UNKNOWN
+  else
+    echo "$LASTVALUE"
+  fi
+}
+
 # Get rrd files associated with a service:
 # Usage: rrd_by_service <host> <service> <rrdhome>
 # Return: a records list. Each record is: metric=rrdfile
@@ -182,34 +210,6 @@ rrd_by_service() {
   echo "${RRDS}"
 }
 
-# Read the last value registered in an RRD file:
-# Usage: rrd_last_value <rrd_file>
-rrd_last_value() {
-  # Check if file exist
-  RRDFILE="$1"
-  if [[ ! -f $RRDFILE ]]; then
-    echo "ERROR: File $RRDFILE not found." >&2
-    echo "0"
-    return $STATE_UNKNOWN
-  fi
-  # Get last update time
-  LASTUPDATE=$(rrdtool last $RRDFILE)
-  if [[ ! $? ]]; then
-    echo "ERROR: Couldn't get last update time." >&2
-    echo "0"
-    return $STATE_UNKNOWN
-  fi
-  # Get last value
-  LASTVALUE=$(rrdtool fetch $RRDFILE AVERAGE|awk -F': ' -v last=$LASTUPDATE 'BEGIN{val=last;} {if($1<last) val=$2;} END{print val;}'|sed "s/ .*$//g")
-  if [[ ! $? ]]; then
-    echo "ERROR: Couldn't get last value." >&2
-    echo "0"
-    return $STATE_UNKNOWN
-  else
-    echo "$LASTVALUE"
-  fi
-}
-
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Xymon configuration
 #
@@ -247,30 +247,54 @@ fi
 # Values in board are separated by '|' (pipes).
 # Each line has: hostname|testname|color|line1.
 echo "$XYMONBOARD" | while read check; do
+  # Parse host:
   host=$(echo $check | awk -F'|' '{print $1;}')
+  # Parse service (test):
   testname=$(echo $check | awk -F'|' '{print $2;}')
+  # Parse state color:
   color=$(echo $check | awk -F'|' '{print $3;}')
+  # Parse service output status:
   line1=$(echo $check | awk -F'|' '{print $4;}')
+  if [[ -z $line1 ]]; then
+    # This means that Xymon is not reporting any text in service status. So I put the color:
+    line1="$color"
+  fi
+  # We need the state to be a number: 0 (ok), 1 (warn), 2 (crit) or 3 (unkn):
   state=$(color_to_code $color)
+  # Check if there are rrd files for this service:
   rrdfiles=$(rrd_by_service $host $testname $XYMONRRDS)
   perf=""
   if [[ $rrdfiles ]]; then
+    # This means there is at least one metric for this service.
+    # Now, if we have more than one metric, we should create one service per metric.
+    rrdcount=$(echo "${rrdfiles}"|awk -F'##' '{print NF-1;}')
+    # Replace '##' with spaces, so for can loop over the files:
     rrdfiles=$(echo "${rrdfiles}"|sed "s/##/ /g")
-    for file in $rrdfiles; do
-      if [[ $perf ]]; then
-        perf="${perf}|"
-      fi
-      metric=$(echo "${file}"|sed "s/=.*$//g")
-      rrdfile=$(echo "${file}"|sed "s/^.*=//g")
+    if [[ $rrdcount -gt 1 ]]; then
+      # This means there is more than one metric.
+      for file in $rrdfiles; do
+      #if [[ $perf ]]; then
+        #perf="${perf}|"
+      #fi
+        metric=$(echo "${file}"|sed "s/=.*$//g")
+        rrdfile=$(echo "${file}"|sed "s/^.*=//g")
+        value=$(rrd_last_value $rrdfile)
+        perf="${metric}=${value}"
+        echo "$state ${host}_${testname}_${metric} $perf $line1"
+      done
+    else
+      # This means there is only one metric.
+      metric=$(echo "${rrdfiles}"|sed "s/=.*$//g")
+      rrdfile=$(echo "${rrdfiles}"|sed "s/^.*=//g")
       value=$(rrd_last_value $rrdfile)
-      perf="${perf}${metric}=${value}"
-    done
+      perf="${metric}=${value}"
+      echo "$state ${host}_${testname} $perf $line1"
+    fi
   else
-    perf="state=$(color_to_avail $color)"
+    # In this case we only have one service and no perf data.
+    # So I set perf data to availability:
+    perf="available=$(color_to_avail $color)"
+    echo "$state ${host}_${testname} $perf $line1"
   fi
-  if [[ -z $line1 ]]; then
-    line1="$color"
-  fi
-  echo "$state ${host}_${testname} $perf $line1"
 done
 
