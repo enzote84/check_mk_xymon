@@ -24,9 +24,10 @@ $current_path = dirname(__FILE__);
 #
 $error_log = "{$current_path}/obsidian_listener_error.log";
 $access_log = "{$current_path}/obsidian_listener_access.log";
+date_default_timezone_set('UTC');
 
 function log_msg($log, $msg) {
-  $text = date("Ymd.His") . ": " . $msg . "\n";
+  $text = date("c") . ": " . $msg . "\n";
   file_put_contents($log, $text, FILE_APPEND);
 }
     
