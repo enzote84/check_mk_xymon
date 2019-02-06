@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# Obsidian Listener Service Script
+#
+# chkconfig: 2345 80 20
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#
+# Version: 1.0
+# Author: DEMR
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Info
+#
+AUTHOR="DEMR"
+VERSION="1.0"
+PROGNAME=$(basename $0)
+DIRNAME=$(dirname $0)
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Settings
+#
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/home/xymon/obsidian/obsidian_listener.php
+NAME=obsidian
+DESC=Obsidian
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Check script
+#
+if [[ ! -f $DAEMON ]]; then
+  exit 1
+fi
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Listener commands
+#
+case "$1" in
+  start)
+	echo -n "Starting $DESC: "
+	su -c "php $DAEMON &" - xymon
+	echo "$NAME."
+	;;
+  stop)
+	echo -n "Stopping $DESC: "
+    pid=$(ps aux|grep obsidian_listener.php$|awk '{print $2;}')
+	if [[ $pid ]]; then
+      kill -9 $pid
+      echo "$NAME."
+    else
+      echo "No $DESC process found."
+	fi
+	;;
+  status)
+    pid=$(ps aux|grep obsidian_listener.php$|awk '{print $2;}')
+    if [[ $pid ]]; then
+      echo "$DESC is running. PID: $pid"
+    else
+      echo "$DESC stopped"
+    fi
+	;;
+  restart)
+	echo -n "Stopping $DESC: "
+    pid=$(ps aux|grep obsidian_listener.php$|awk '{print $2;}')
+	if [[ $pid ]]; then
+      kill -9 $pid
+      echo "$NAME."
+    else
+      echo "No $DESC process found."
+	fi
+    sleep 2
+    echo -n "Starting $DESC: "
+	su -c "php $DAEMON &" - xymon
+	echo "$NAME."
+	;;
+  *)
+	N=/etc/init.d/$NAME
+	echo "Usage: $N {start|stop|restart|status}" >&2
+	exit 1
+	;;
+esac
+
+exit 0
+
