@@ -10,6 +10,17 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# Usage
+#
+# 1.- Connect to host and port using sockets.
+# 2.- To make a query, write a message to the stream.
+# 3.- Available queries:
+# 3.1.- Hosts: "option=hosts"
+# 3.2.- Services of a particular host: "option=services&host=myhost"
+# 3.3.- Service status: "option=data&host=myhost&service=cpu"
+#
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Variables
 #
 # You should only modify the port variable
@@ -86,7 +97,12 @@ else {
           break;
         default:
           $params_ok = false;
-          log_msg($error_log, "Error parsing parameters: {$params['option']}");
+          if (!empty($params['option'])) {
+            log_msg($error_log, "Error parsing parameters: Unknown option: {$params['option']}");
+          }
+          else {
+            log_msg($access_log, "No options specified");
+          }
           break;
       }
       if ($params_ok) {

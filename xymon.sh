@@ -332,7 +332,7 @@ case "$REPORTOPTION" in
       # So I set perf data to availability:
       perf="available=$(color_to_avail $color)"
     fi
-    echo "$state|$line1|$perf"
+    echo "$state##$line1##$perf"
     ;;
   *)
     echo "No report option"

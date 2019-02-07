@@ -9,20 +9,22 @@ class Xymon extends AbstractIntegrator
     protected $telnet;
     protected $xymon_host;
     protected $xymon_port;
-    const TIMEOUT = 3;
+    const TIMEOUT = 5;
     const DEBUG = 0;
     protected $arrTools;
 
     function __construct($config)
     {
         parent::__construct($config);
+        # Configure attributes:
         $this->arrTools = $this->getSourceTools();
         $this->config = $config;
         $this->xymon_host = $config['xymon_host'];
         $this->xymon_port = $config['xymon_port'];
+        # Connect to Xymon server:
         $this->telnet = new SimpleTelnet($this->xymon_host, $this->xymon_port, self::TIMEOUT, self::DEBUG);
         if (!$this->telnet->isAvailable()) {
-            $this->putError("XYMON: Failet to connect to host.");
+            $this->putError("XYMON: Failet to connect to host: {$this->xymon_host}:{$this->xymon_port}");
             $this->error = sprintf("Failed to connect to %s:%d", $this->getHost(), $config['xymon_port']);
             $this->available = false;
         }
@@ -34,27 +36,33 @@ class Xymon extends AbstractIntegrator
 
     public function getParsedValue($source, $info, $monitor_type, $date = null)
     {
-        # TODO: Verify with Natalia.
+        # Get a service status from Xymon and parse it to show on obsidian
         if ($date == null) {
             $date = date('Y-m-d H:i:s');
         }
+        # Get host and service name:
         list($host, $svc) = preg_split('/\+/', $info['ci_monitor']);
+        # Connect to Xymon server:
         $this->telnet = new SimpleTelnet($this->xymon_host, $this->xymon_port, self::TIMEOUT, self::DEBUG);
+        # Check if it is a host alive service or other:
         if (($svc == 'check-host-alive') || ($svc == 'DV-check-host-alive')) {
-            $out = $this->telnet->execute("GET services\nColumns: state plugin_output\nFilter: description ~~ ^{$host}_info$\n\n");
-            $perf = $this->telnet->execute("GET services\nFilter: description ~~ ^{$host}_info$\nStats: sum perf_data\n\n");
-        } else {
-            $out = $this->telnet->execute("GET services\nColumns: state plugin_output\nFilter: description ~~ ^{$host}_{$svc}$\n\n");
-            $perf = $this->telnet->execute("GET services\nFilter: description ~~ ^{$host}_{$svc}$\nStats: sum perf_data\n\n");
+            $out = $this->telnet->execute("option=data&host={$host}&service=info");
         }
+        else {
+            $out = $this->telnet->execute("option=data&host={$host}&service={$svc}");
+        }
+        # It should be just one line, but it is better to split in elements:
         $lines = preg_split("/\r\n|\n|\r/", $out);
-        $line = preg_split('/;/', $lines[0], 2);
+        # Fields in the line are separated by "##"
+        # The spected fields are:
+        #    service state (0, 1, 2, 3) | service status description | performance data
+        $line = preg_split('/##/', $lines[0]);
+        # Create the array to return:
         $retorno = array(
             'STATE' => intval($line[0]),
-            #'OUTPUT' => $line[1],
-            'OUTPUT' => $line[1] . " | " . $perf,
+            'OUTPUT' => $line[1] . " | " . $line[2],
             'start_time' => $date,
-            'valor' => $perf
+            'valor' => $line[2]
         );
         return $retorno;
     }
@@ -66,30 +74,32 @@ class Xymon extends AbstractIntegrator
 
     public function getTopLevel($filter)
     {
-        # All services that represents a host have the pattern: hostname_info
-        $out = $this->telnet->execute("GET services\nColumns: description\nFilter: description ~~ ^.*{$filter}.*_info$\n\n");
-        # Cut out _info tail
-        $out = preg_replace("/_info/", "", $out);
+        # Get a list of all host from Xymon:
+        $out = $this->telnet->execute("option=hosts");
         # Create an array with an element by line
         $array = preg_split("/\r\n|\n|\r/", $out);
         # Create an array to return as result
         $res = array();
         foreach ($array as $r) {
-            $res[] = array(
-                'parent' => $this->xymon_host,
-                'display_name' => $r,
-                'host_object_id' => $r
-            );
+            # Ignore any empty lines:
+            if (!empty($r)) {
+                # Ignore hosts that do not match filter:
+                if (empty($filter) || preg_match("/{$filter}/", $r)) {
+                    $res[] = array(
+                        #'parent' => $this->xymon_host,
+                        'display_name' => $r,
+                        'host_object_id' => $r
+                    );
+                }
+            }
         }
         return $res;
     }
 
     public function getSecondLevel($parent_id, $filter2)
     {
-        # All service are in the form: hostname_service
-        $out = $this->telnet->execute("GET services\nColumns: description\nFilter: description ~~ ^{$parent_id}.*\n\n");
-        # Cut out hostname_ part
-        $out = preg_replace("/{$parent_id}./", "", $out);
+        # Get all services from a particular host:
+        $out = $this->telnet->execute("option=services&host={$parent_id}");
         # Create an array with an element by line
         $array = preg_split("/\r\n|\n|\r/", $out);
         # Add a service to monitor hosts availability
@@ -97,15 +107,17 @@ class Xymon extends AbstractIntegrator
         # Create an array to return as result
         $res = array();
         foreach ($array as $value) {
-            # Ignore services that do not match filter:
-            if (empty($filter2) || preg_match("/{$filter2}/", $value)) {
-                $res[] = array(
-                    'parent' => $parent_id,
-                    'value' => $value,
-                    'display_name' => $value,
-                    #'service_object_id' => $value
-                    'service_object_id' => $parent_id . '+' . $value
-                );
+            # Ignore any empty line:
+            if (!empty($value)) {
+                # Ignore services that do not match filter:
+                if (empty($filter2) || preg_match("/{$filter2}/", $value)) {
+                    $res[] = array(
+                        'parent' => $parent_id,
+                        'value' => $value,
+                        'display_name' => $value,
+                        'service_object_id' => $parent_id . '+' . $value
+                    );
+                }
             }
         }
         return $res;
@@ -113,6 +125,8 @@ class Xymon extends AbstractIntegrator
 
     public function getToolId()
     {
+        # The toolid that it is assigned when firs upload the class:
+        # select id from bsm_sourcetool where source='xymon';
         return 2003;
     }
 
