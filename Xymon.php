@@ -11,6 +11,7 @@ class Xymon extends AbstractIntegrator
     protected $xymon_port;
     const TIMEOUT = 5;
     const DEBUG = 0;
+    const EOL_PATTERN = "/\r\n|\n|\r/";
     protected $arrTools;
 
     function __construct($config)
@@ -52,19 +53,18 @@ class Xymon extends AbstractIntegrator
             $out = $this->telnet->execute("option=data&host={$host}&service={$svc}");
         }
         # It should be just one line, but it is better to split in elements:
-        $lines = preg_split("/\r\n|\n|\r/", $out);
+        $lines = preg_split(self::EOL_PATTERN, $out);
         # Fields in the line are separated by "##"
         # The spected fields are:
         #    service state (0, 1, 2, 3) | service status description | performance data
         $line = preg_split('/##/', $lines[0]);
-        # Create the array to return:
-        $retorno = array(
+        # Return array:
+        return array(
             'STATE' => intval($line[0]),
             'OUTPUT' => $line[1] . " | " . $line[2],
             'start_time' => $date,
             'valor' => $line[2]
         );
-        return $retorno;
     }
 
     public function isEnabled()
@@ -77,20 +77,16 @@ class Xymon extends AbstractIntegrator
         # Get a list of all host from Xymon:
         $out = $this->telnet->execute("option=hosts");
         # Create an array with an element by line
-        $array = preg_split("/\r\n|\n|\r/", $out);
+        $array = preg_split(self::EOL_PATTERN, $out);
         # Create an array to return as result
         $res = array();
         foreach ($array as $r) {
-            # Ignore any empty lines:
-            if (!empty($r)) {
-                # Ignore hosts that do not match filter:
-                if (empty($filter) || preg_match("/{$filter}/", $r)) {
-                    $res[] = array(
-                        #'parent' => $this->xymon_host,
-                        'display_name' => $r,
-                        'host_object_id' => $r
-                    );
-                }
+            # Ignore any empty lines and hosts that do not match filter:
+            if (!empty($r) && (empty($filter) || preg_match("/{$filter}/", $r))) {
+                $res[] = array(
+                    'display_name' => $r,
+                    'host_object_id' => $r
+                );
             }
         }
         return $res;
@@ -101,23 +97,20 @@ class Xymon extends AbstractIntegrator
         # Get all services from a particular host:
         $out = $this->telnet->execute("option=services&host={$parent_id}");
         # Create an array with an element by line
-        $array = preg_split("/\r\n|\n|\r/", $out);
+        $array = preg_split(self::EOL_PATTERN, $out);
         # Add a service to monitor hosts availability
         array_unshift($array, "DV-check-host-alive");
         # Create an array to return as result
         $res = array();
         foreach ($array as $value) {
-            # Ignore any empty line:
-            if (!empty($value)) {
-                # Ignore services that do not match filter:
-                if (empty($filter2) || preg_match("/{$filter2}/", $value)) {
-                    $res[] = array(
-                        'parent' => $parent_id,
-                        'value' => $value,
-                        'display_name' => $value,
-                        'service_object_id' => $parent_id . '+' . $value
-                    );
-                }
+            # Ignore any empty line and services that do not match filter:
+            if (!empty($value) && (empty($filter2) || preg_match("/{$filter2}/", $value))) {
+                $res[] = array(
+                    'parent' => $parent_id,
+                    'value' => $value,
+                    'display_name' => $value,
+                    'service_object_id' => $parent_id . '+' . $value
+                );
             }
         }
         return $res;
@@ -125,8 +118,8 @@ class Xymon extends AbstractIntegrator
 
     public function getToolId()
     {
-        # The toolid that it is assigned when firs upload the class:
-        # select id from bsm_sourcetool where source='xymon';
+        # The toolid that it is assigned when first upload the class.
+        # A query can be made by selecting id from bsm_sourcetool and the source is xymon
         return 2003;
     }
 

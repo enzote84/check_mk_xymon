@@ -21,7 +21,7 @@
 #
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# Variables
+# Variables and constants
 #
 # You should only modify the port variable
 $protocol = "tcp";
@@ -29,6 +29,7 @@ $server = "0.0.0.0";
 $port = "25003";
 $timeout = -1;
 $current_path = dirname(__FILE__);
+const OPTION = 'option';
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Logs
@@ -70,7 +71,7 @@ else {
       $requested_host = "";
       $requested_service ="";
       $params_ok = true;
-      switch ($params['option']) {
+      switch ($params[OPTION]) {
         case "hosts":
           $command_params = " -H";
           break;
@@ -87,7 +88,7 @@ else {
         case "data":
           $requested_host = $params['host'];
           $requested_service = $params['service'];
-          if (empty($requested_host) or empty($requested_service)) {
+          if (empty($requested_host) || empty($requested_service)) {
             $params_ok = false;
             log_msg($error_log, "Error parsing parameters in data");
           }
@@ -97,8 +98,8 @@ else {
           break;
         default:
           $params_ok = false;
-          if (!empty($params['option'])) {
-            log_msg($error_log, "Error parsing parameters: Unknown option: {$params['option']}");
+          if (!empty($params[OPTION])) {
+            log_msg($error_log, "Error parsing parameters: Unknown option: {$params[OPTION]}");
           }
           else {
             log_msg($access_log, "No options specified");
